@@ -65,6 +65,10 @@ export default {
 		}
 
 		if (request.method == 'PUT' || request.method == 'POST') {
+			if (objectName.startsWith(env.IGNORE)) {
+				return new Response('Forbidden', { status: 403 })
+			}
+
 			let object = await env.BUCKET.put(objectName, request.body, {
 				httpMetadata: request.headers,
 			})
@@ -74,6 +78,10 @@ export default {
 		}
 
 		if (request.method == 'DELETE') {
+			if (objectName.startsWith(env.IGNORE)) {
+				return new Response('Forbidden', { status: 403 })
+			}
+
 			await env.BUCKET.delete(objectName)
 			return new Response('deleted', { headers })
 		}
@@ -84,13 +92,15 @@ export default {
 	async scheduled(event, env, ctx) {
 		let now = Date.now()
 
-		let listing = await env.BUCKET.list({
-			include: ['customMetadata', 'httpMetadata']
-		})
+		let objects = (await env.BUCKET.list()).objects.map(i => {
+			if (!i.key.startsWith(env.IGNORE)) return i
+		}).filter(i => i)
 
-		for (let object of listing.objects) {	
-			let expires = Date.parse(object.uploaded) + env.SCHEDULED * 60 * 60 * 1000
-			if (now < expires || object.key.startsWith(env.IGNORE)) return
+		for (let object of objects) {
+			let expires = Date.parse(object.uploaded) + 60 * 1000
+			if (now < expires) return
+
+			console.log(`delete: ${object.key}`)
 			await env.BUCKET.delete(object.key)
 		}
 	},
